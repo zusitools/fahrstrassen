@@ -68,16 +68,27 @@ for f in tree.findall("./Strecke/Fahrstrasse"):
             colored(str_geschw(hsig_geschw), 'red', attrs=['bold']),
         ))
 
-        for ksig in signal.findall("./KoppelSignal"):
+        ksig = signal.find("./KoppelSignal")
+        (element_alt, richtung_alt) = (None, None)
+        indent = 2
+        while ksig is not None:
             datei = ksig.find("./Datei")
             if datei is not None:
                 dateiname = datei.attrib.get("Dateiname", "")
                 if dateiname != "" and dateiname.upper() != str_dateiname:
                     print(colored("   - Koppelsignal in Modul {}".format(dateiname), 'grey'))
-                    continue
-            (element, richtung) = referenzpunkte[int(ksig.attrib.get("ReferenzNr", 0))]
+                    break
+            try:
+                (element, richtung) = referenzpunkte[int(ksig.attrib.get("ReferenzNr", 0))]
+            except KeyError:
+                print(colored("{} - Ungueltige Koppelsignal-Referenz".format(" " * indent), 'red', attrs=['bold']))
+                break
+            if (element, richtung) == (element_alt, richtung_alt):
+                print(colored("{} - Zirkelbezug in Koppelsignal".format(" " * indent)), 'red', attrs=['bold'])
+                break
             koppelsignal = element.find("./Info" + richtung + "Richtung/Signal")
-            print("   - Koppelsignal {} {} an Element {} {} auf Zeile {} ({})".format(
+            print("{} - Koppelsignal {} {} an Element {} {} auf Zeile {} ({})".format(
+                " " * indent,
                 colored(koppelsignal.attrib.get("NameBetriebsstelle", "?"), 'blue'),
                 colored(koppelsignal.attrib.get("Signalname", "?"), 'blue', attrs=['bold']),
 
@@ -87,6 +98,8 @@ for f in tree.findall("./Strecke/Fahrstrasse"):
                 zeile,
                 colored(str_geschw(float(koppelsignal.findall("./HsigBegriff")[zeile].attrib.get("HsigGeschw", 0.0))), 'red', attrs=['bold']),
             ))
+            indent += 2
+            ksig = koppelsignal.find("./KoppelSignal")
 
     for sig in f.findall("./FahrstrVSignal"):
         datei = sig.find("./Datei")
