@@ -2,6 +2,7 @@
 
 import xml.etree.ElementTree as ET
 import sys
+import os
 from termcolor import colored
 
 tree = ET.parse(sys.argv[1])
@@ -22,8 +23,15 @@ def geschw_kleiner(v1, v2):
         return False
     return v1 < v2
 
-# HACK
-str_dateiname = tree.find("./Strecke/Datei").attrib["Dateiname"].upper().replace(".LS3", ".ST3")
+def normalize_zusi_relpath(relpath):
+    return relpath.upper().replace('/', '\\')
+
+def get_zusi_relpath(realpath):
+    if not os.path.isabs(realpath):
+        realpath = os.path.abspath(realpath)
+    return normalize_zusi_relpath(os.path.relpath(realpath, os.environ['ZUSI3_DATAPATH']))
+
+str_dateiname = get_zusi_relpath(sys.argv[1])
 
 streckenelemente = dict(
         (int(s.attrib.get("Nr", 0)), s)
