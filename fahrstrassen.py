@@ -50,18 +50,20 @@ for f in tree.findall("./Strecke/Fahrstrasse"):
                 continue
         (element, richtung) = referenzpunkte[int(sig.attrib.get("Ref", 0))]
         signal = element.find("./Info" + richtung + "Richtung/Signal")
+        ersatzsignal = int(sig.attrib.get("FahrstrSignalErsatzsignal", 0)) == 1
         zeile = int(sig.attrib.get("FahrstrSignalZeile", 0))
-        hsig_geschw = float(signal.findall("./HsigBegriff")[zeile].attrib.get("HsigGeschw", 0.0))
-        if hsig_geschw != 0:
-            # == 0 koennen z.B. Flachkreuzungen sein
+        hsig_geschw = float(signal.findall("./HsigBegriff")[zeile].attrib.get("HsigGeschw", 0.0)) if not ersatzsignal else 0.0
+        if ersatzsignal or hsig_geschw != 0:
+            # == 0 ohne Ersatzsignal koennen z.B. Flachkreuzungen sein
             min_geschw = geschw_min(min_geschw, hsig_geschw)
-        print(" - Hauptsignal {} {} an Element {} {} auf Zeile {} ({})".format(
+        print(" - Hauptsignal {} {} an Element {} {} auf {} {} ({})".format(
             colored(signal.attrib.get("NameBetriebsstelle", "?"), 'blue'),
             colored(signal.attrib.get("Signalname", "?"), 'blue', attrs=['bold']),
 
             element.attrib.get("Nr", 0),
             richtung,
 
+            ("Zeile" if not ersatzsignal else (colored("Ersatzsignal", 'grey', attrs=['underline']) + 'zeile')),
             zeile,
             colored(str_geschw(hsig_geschw), 'red', attrs=['bold']),
         ))
