@@ -50,6 +50,9 @@ def get_zusi_relpath(realpath):
         realpath = os.path.abspath(realpath)
     return normalize_zusi_relpath(os.path.relpath(realpath, os.environ['ZUSI3_DATAPATH']))
 
+def get_abspath(zusi_relpath):
+    return os.path.join(os.environ['ZUSI3_DATAPATH'], zusi_relpath.lstrip('\\').replace('\\', os.sep))
+
 # Modul -> (Referenznummer -> (<StrElement>-Knoten, {"Norm", "Gegen"}))
 referenzpunkte = dict()
 
@@ -57,7 +60,7 @@ referenzpunkte = dict()
 fahrstrassen = dict()
 
 def lade_modul(zusi_relpath):
-    tree = ET.parse(os.path.join(os.environ['ZUSI3_DATAPATH'], zusi_relpath.replace('\\', os.sep)))
+    tree = ET.parse(get_abspath(zusi_relpath))
     # Elementnummer -> <StrElement>-Knoten
     streckenelemente = dict(
         (int(s.attrib.get("Nr", 0)), s)
@@ -97,7 +100,7 @@ animationen = dict()
 def get_animationen(signal_ls3_relpath):
     signal_ls3_relpath = normalize_zusi_relpath(signal_ls3_relpath)
     if signal_ls3_relpath not in animationen:
-        tree = ET.parse(os.path.join(os.environ['ZUSI3_DATAPATH'], signal_ls3_relpath.replace('\\', os.sep)))
+        tree = ET.parse(get_abspath(signal_ls3_relpath))
         animationen[signal_ls3_relpath] = [n.attrib.get("AniBeschreibung", "?") for n in tree.findall("./Landschaft/Animation")]
     return animationen[signal_ls3_relpath]
 
