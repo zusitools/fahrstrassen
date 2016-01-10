@@ -190,6 +190,7 @@ for f in fahrstrassen[dieses_modul]:
         signal = rp.element.find("./Info" + rp.richtung + "Richtung/Signal")
         spalte = int(sig.attrib.get("FahrstrSignalSpalte", 0))
         vsig_geschw = float(signal.findall("./VsigBegriff")[spalte].attrib.get("VsigGeschw", 0.0))
+        alarm = geschw_kleiner(min_geschw, vsig_geschw)
         print(" - Vorsignal {} {} an {} auf Spalte {} ({}) {} {}".format(
             colored(signal.attrib.get("NameBetriebsstelle", "?"), 'cyan'),
             colored(signal.attrib.get("Signalname", "?"), 'cyan', attrs=['bold']),
@@ -197,5 +198,11 @@ for f in fahrstrassen[dieses_modul]:
             spalte,
             colored(str_geschw(vsig_geschw), 'green', attrs=['bold']),
             get_signalbild_fuer_spalte(signal, spalte),
-            colored("!!!!", 'red', attrs=['bold']) if geschw_kleiner(min_geschw, vsig_geschw) else "",
+            colored("!!!!", 'red', attrs=['bold']) if alarm else "",
         ))
+        if alarm:
+            print("   - Signal-Frames:")
+            for sigframe in signal.findall("./SignalFrame/Datei"):
+                print("     - {}".format(sigframe.attrib.get("Dateiname", "")))
+            print("   - Hsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("HsigGeschw", 0)) for n in signal.findall("./HsigBegriff")]))))
+            print("   - Vsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("VsigGeschw", 0)) for n in signal.findall("./VsigBegriff")]))))
