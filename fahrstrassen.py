@@ -3,6 +3,7 @@
 import xml.etree.ElementTree as ET
 import sys
 import os
+import io
 from collections import namedtuple
 from termcolor import colored
 
@@ -148,65 +149,72 @@ def get_signalbild_fuer_zeile(signal, zeile, ersatzsignal):
     return get_signalbild(signal, signalbild_id)
 
 for f in fahrstrassen[dieses_modul]:
-    print("\nFahrstrasse {} {}".format(f.attrib.get("FahrstrTyp", "?"), colored(f.attrib.get("FahrstrName", "?"), 'grey', attrs=['bold'])))
+    print_out = False
+    with io.StringIO() as out:
+        print("\nFahrstrasse {} {}".format(f.attrib.get("FahrstrTyp", "?"), colored(f.attrib.get("FahrstrName", "?"), 'grey', attrs=['bold'])), file=out)
 
-    min_geschw = -1
+        min_geschw = -1
 
-    for sig in f.findall("./FahrstrSignal"):
-        rp = get_refpunkt(get_modul_aus_dateiknoten(sig), int(sig.attrib.get("Ref", 0)))
-        signal = rp.element.find("./Info" + rp.richtung + "Richtung/Signal")
-        ersatzsignal = int(sig.attrib.get("FahrstrSignalErsatzsignal", 0)) == 1
-        zeile = int(sig.attrib.get("FahrstrSignalZeile", 0))
-        hsig_geschw = float(signal.findall("./HsigBegriff")[zeile].attrib.get("HsigGeschw", 0.0)) if not ersatzsignal else 0.0
-        if ersatzsignal or hsig_geschw != 0:
-            # == 0 ohne Ersatzsignal koennen z.B. Flachkreuzungen sein
-            min_geschw = geschw_min(min_geschw, hsig_geschw)
-        print(" - Hauptsignal {} {} an {} auf {} {} ({}) {}".format(
-            colored(signal.attrib.get("NameBetriebsstelle", "?"), 'blue'),
-            colored(signal.attrib.get("Signalname", "?"), 'blue', attrs=['bold']),
-            rp,
-            ("Zeile" if not ersatzsignal else (colored("Ersatzsignal", 'grey', attrs=['underline']) + 'zeile')),
-            zeile,
-            colored(str_geschw(hsig_geschw), 'red', attrs=['bold']),
-            get_signalbild_fuer_zeile(signal, zeile, ersatzsignal),
-        ))
-
-        ksig = signal.find("./KoppelSignal")
-        indent = 2
-        while ksig is not None:
-            rp = get_refpunkt(get_modul_aus_dateiknoten(ksig), int(ksig.attrib.get("ReferenzNr", 0)))
-            koppelsignal = rp.element.find("./Info" + rp.richtung + "Richtung/Signal")
-            print("{} - Koppelsignal {} {} an {} auf Zeile {} ({}) {}".format(
-                " " * indent,
-                colored(koppelsignal.attrib.get("NameBetriebsstelle", "?"), 'blue'),
-                colored(koppelsignal.attrib.get("Signalname", "?"), 'blue', attrs=['bold']),
+        for sig in f.findall("./FahrstrSignal"):
+            rp = get_refpunkt(get_modul_aus_dateiknoten(sig), int(sig.attrib.get("Ref", 0)))
+            signal = rp.element.find("./Info" + rp.richtung + "Richtung/Signal")
+            ersatzsignal = int(sig.attrib.get("FahrstrSignalErsatzsignal", 0)) == 1
+            zeile = int(sig.attrib.get("FahrstrSignalZeile", 0))
+            hsig_geschw = float(signal.findall("./HsigBegriff")[zeile].attrib.get("HsigGeschw", 0.0)) if not ersatzsignal else 0.0
+            if ersatzsignal or hsig_geschw != 0:
+                # == 0 ohne Ersatzsignal koennen z.B. Flachkreuzungen sein
+                min_geschw = geschw_min(min_geschw, hsig_geschw)
+            print(" - Hauptsignal {} {} an {} auf {} {} ({}) {}".format(
+                colored(signal.attrib.get("NameBetriebsstelle", "?"), 'blue'),
+                colored(signal.attrib.get("Signalname", "?"), 'blue', attrs=['bold']),
                 rp,
+                ("Zeile" if not ersatzsignal else (colored("Ersatzsignal", 'grey', attrs=['underline']) + 'zeile')),
                 zeile,
-                colored(str_geschw(float(koppelsignal.findall("./HsigBegriff")[zeile].attrib.get("HsigGeschw", 0.0))), 'red', attrs=['bold']),
-                get_signalbild_fuer_zeile(koppelsignal, zeile, ersatzsignal),
-            ))
-            indent += 2
-            ksig = koppelsignal.find("./KoppelSignal")
+                colored(str_geschw(hsig_geschw), 'red', attrs=['bold']),
+                get_signalbild_fuer_zeile(signal, zeile, ersatzsignal),
+            ), file=out)
 
-    for sig in f.findall("./FahrstrVSignal"):
-        rp = get_refpunkt(get_modul_aus_dateiknoten(sig), int(sig.attrib.get("Ref", 0)))
-        signal = rp.element.find("./Info" + rp.richtung + "Richtung/Signal")
-        spalte = int(sig.attrib.get("FahrstrSignalSpalte", 0))
-        vsig_geschw = float(signal.findall("./VsigBegriff")[spalte].attrib.get("VsigGeschw", 0.0))
-        alarm = geschw_kleiner(min_geschw, vsig_geschw)
-        print(" - Vorsignal {} {} an {} auf Spalte {} ({}) {} {}".format(
-            colored(signal.attrib.get("NameBetriebsstelle", "?"), 'cyan'),
-            colored(signal.attrib.get("Signalname", "?"), 'cyan', attrs=['bold']),
-            rp,
-            spalte,
-            colored(str_geschw(vsig_geschw), 'green', attrs=['bold']),
-            get_signalbild_fuer_spalte(signal, spalte),
-            colored("!!!!", 'red', attrs=['bold']) if alarm else "",
-        ))
-        if alarm:
-            print("   - Signal-Frames:")
-            for sigframe in signal.findall("./SignalFrame/Datei"):
-                dateiname = sigframe.attrib.get("Dateiname", "")
-                print("     - {} {}".format(dateiname, ", ".join(get_animationen(dateiname))))
-            print("   - Hsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("HsigGeschw", 0)) for n in signal.findall("./HsigBegriff")]))))
-            print("   - Vsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("VsigGeschw", 0)) for n in signal.findall("./VsigBegriff")]))))
+            ksig = signal.find("./KoppelSignal")
+            indent = 2
+            while ksig is not None:
+                rp = get_refpunkt(get_modul_aus_dateiknoten(ksig), int(ksig.attrib.get("ReferenzNr", 0)))
+                koppelsignal = rp.element.find("./Info" + rp.richtung + "Richtung/Signal")
+                print("{} - Koppelsignal {} {} an {} auf Zeile {} ({}) {}".format(
+                    " " * indent,
+                    colored(koppelsignal.attrib.get("NameBetriebsstelle", "?"), 'blue'),
+                    colored(koppelsignal.attrib.get("Signalname", "?"), 'blue', attrs=['bold']),
+                    rp,
+                    zeile,
+                    colored(str_geschw(float(koppelsignal.findall("./HsigBegriff")[zeile].attrib.get("HsigGeschw", 0.0))), 'red', attrs=['bold']),
+                    get_signalbild_fuer_zeile(koppelsignal, zeile, ersatzsignal),
+                ), file=out)
+                indent += 2
+                ksig = koppelsignal.find("./KoppelSignal")
+
+        for sig in f.findall("./FahrstrVSignal"):
+            rp = get_refpunkt(get_modul_aus_dateiknoten(sig), int(sig.attrib.get("Ref", 0)))
+            signal = rp.element.find("./Info" + rp.richtung + "Richtung/Signal")
+            spalte = int(sig.attrib.get("FahrstrSignalSpalte", 0))
+            vsig_geschw = float(signal.findall("./VsigBegriff")[spalte].attrib.get("VsigGeschw", 0.0))
+            alarm = vsig_geschw != -2.0 and geschw_kleiner(min_geschw, vsig_geschw)
+            print_out |= alarm
+            print(" - Vorsignal {} {} an {} auf Spalte {} ({}) {} {}".format(
+                colored(signal.attrib.get("NameBetriebsstelle", "?"), 'cyan'),
+                colored(signal.attrib.get("Signalname", "?"), 'cyan', attrs=['bold']),
+                rp,
+                spalte,
+                colored(str_geschw(vsig_geschw), 'green', attrs=['bold']),
+                get_signalbild_fuer_spalte(signal, spalte),
+                colored("!!!!", 'red', attrs=['bold']) if alarm else "",
+            ), file=out)
+            if alarm:
+                print("   - Signal-Frames:", file=out)
+                for sigframe in signal.findall("./SignalFrame/Datei"):
+                    dateiname = sigframe.attrib.get("Dateiname", "")
+                    print("     - {} {}".format(dateiname, ", ".join(get_animationen(dateiname))), file=out)
+                print("   - Hsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("HsigGeschw", 0)) for n in signal.findall("./HsigBegriff")]))), file=out)
+                print("   - Vsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("VsigGeschw", 0)) for n in signal.findall("./VsigBegriff")]))), file=out)
+
+        if (print_out):
+            out.seek(0)
+            print(out.read())
