@@ -206,6 +206,7 @@ for f in fahrstrassen[dieses_modul]:
         if alarm:
             print("   - Signal-Frames:")
             for sigframe in signal.findall("./SignalFrame/Datei"):
-                print("     - {}".format(sigframe.attrib.get("Dateiname", "")))
+                dateiname = sigframe.attrib.get("Dateiname", "")
+                print("     - {} {}".format(dateiname, ", ".join(get_animationen(dateiname))))
             print("   - Hsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("HsigGeschw", 0)) for n in signal.findall("./HsigBegriff")]))))
             print("   - Vsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("VsigGeschw", 0)) for n in signal.findall("./VsigBegriff")]))))
