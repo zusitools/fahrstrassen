@@ -86,7 +86,7 @@ class RefPunkt(object):
         global dieses_modul
         return "Element {}{}{}".format(
             self.element.attrib.get("Nr", "0"),
-            'n' if self.richtung == "Norm" else 'g',
+            'n' if self.richtung == NORM else 'g',
             "" if self.modul == dieses_modul else "[{}]".format(self.modul_kurz())
         )
 
@@ -97,7 +97,10 @@ class RefPunkt(object):
         return os.path.basename(self.modul.replace('\\', os.sep))
 
     def el_r(self):
-        return (self.modul, self.element, NORM if self.richtung == "Norm" else GEGEN)
+        return (self.modul, self.element, self.richtung)
+
+    def signal(self):
+        return self.element.find("./Info" + ("Norm" if self.richtung == NORM else "Gegen") + "Richtung/Signal")
 
 str_geschw = lambda v : "oo<{:.0f}>".format(v) if v < 0 else "{:.0f}".format(v * 3.6)
 
@@ -132,7 +135,7 @@ missing = set()
 # Modul -> (Elementnummer -> <StrElement>-Knoten)
 streckenelemente = dict()
 
-# Modul -> (Referenznummer -> (<StrElement>-Knoten, {"Norm", "Gegen"}))
+# Modul -> (Referenznummer -> (<StrElement>-Knoten, {NORM, GEGEN}))
 referenzpunkte = dict()
 
 # Modul -> [<Fahrstrasse>-Knoten]
@@ -146,7 +149,7 @@ def lade_modul(zusi_relpath):
         for s in tree.findall("./Strecke/StrElement")
     )
     referenzpunkte[zusi_relpath] = dict(
-        (int(r.attrib.get("ReferenzNr", 0)), (streckenelemente[zusi_relpath][int(r.attrib.get("StrElement", 0))], "Norm" if int(r.attrib.get("StrNorm", 0)) == 1 else "Gegen", int(r.attrib.get("RefTyp", 0)), r.attrib.get("Info", "")))
+        (int(r.attrib.get("ReferenzNr", 0)), (streckenelemente[zusi_relpath][int(r.attrib.get("StrElement", 0))], NORM if int(r.attrib.get("StrNorm", 0)) == 1 else GEGEN, int(r.attrib.get("RefTyp", 0)), r.attrib.get("Info", "")))
         for r in tree.findall("./Strecke/ReferenzElemente")
         if int(r.attrib.get("StrElement", 0)) in streckenelemente[zusi_relpath]
     )
@@ -229,7 +232,7 @@ def nachfolger(el_r, index):
         nach_modul = get_modul_aus_dateiknoten(nachfolger_knoten)
         nach_ref = get_refpunkt(nach_modul, int(nachfolger_knoten.attrib.get("Nr", 0)))
         nach_el = nach_ref.element if nach_ref.valid else None
-        nach_richtung = GEGEN if nach_ref.richtung == "Norm" else NORM
+        nach_richtung = GEGEN if nach_ref.richtung == NORM else NORM
 
     if nach_el is None:
         return None
@@ -307,7 +310,7 @@ def get_signalbild_fuer_zeile(signal, zeile, ersatzsignal):
 if False:
   for refnr, (element, richtung, reftyp, info) in referenzpunkte[dieses_modul].items():
     if reftyp == 4:
-        sig = element.find("./Info" + richtung + "Richtung/Signal")
+        sig = element.find("./Info" + ("Norm" if richtung == NORM else "Gegen") + "Richtung/Signal")
         if sig is not None:
             info_soll = 'Signal: {} {}'.format(sig.attrib.get("NameBetriebsstelle", ""), sig.attrib.get("Signalname", ""))
             if info != info_soll:
@@ -348,6 +351,7 @@ if True:
         if start_rp.valid and ziel_rp.valid:
             akt = start
             elemente.append(akt)
+            cnt = 0
             while akt is not None and akt != ziel:
                 akt = nachfolger(akt, weichen.get(akt, 0))
                 if akt is not None:
@@ -358,7 +362,7 @@ if True:
             if not rp.valid():
                 print(" - " + colored("Hauptsignal mit nicht aufloesbarer Referenz {} in Modul {}".format(rp.refnr, rp.modul_kurz()), 'white', 'on_red'), file=out)
                 continue
-            signal = rp.element.find("./Info" + rp.richtung + "Richtung/Signal")
+            signal = rp.signal()
             if signal is None:
                 print(" - " + colored("Hauptsignal-Referenz mit fehlendem Signal an {} (Referenznummer {})".format(rp, rp.refnr), 'white', 'on_red'), file=out)
                 continue
@@ -388,7 +392,7 @@ if True:
                 if not rp.valid():
                     print("{} - ".format(" " * indent) + colored("Koppelsignal mit nicht aufloesbarer Referenz {} in Modul {}".format(rp.refnr, rp.modul_kurz()), 'white', 'on_red'), file=out)
                     break
-                koppelsignal = rp.element.find("./Info" + rp.richtung + "Richtung/Signal")
+                koppelsignal = rp.signal()
                 if koppelsignal is None:
                     print("{} - ".format(" " * indent) + colored("Koppelsignal-Referenz mit fehlendem Signal an {} (Referenznummer {})".format(rp, rp.refnr), 'white', 'on_red'), file=out)
                     break
@@ -413,7 +417,7 @@ if True:
             if not rp.valid():
                 print(" - " + colored("Vorsignal mit nicht aufloesbarer Referenz {} in Modul {}".format(rp.refnr, rp.modul_kurz()), 'white', 'on_red'), file=out)
                 continue
-            signal = rp.element.find("./Info" + rp.richtung + "Richtung/Signal")
+            signal = rp.signal()
             spalte = int(sig.attrib.get("FahrstrSignalSpalte", 0))
             vsig_geschw = float(signal.findall("./VsigBegriff")[spalte].attrib.get("VsigGeschw", 0.0))
             alarm = vsig_geschw != -2.0 and geschw_kleiner(min_geschw, vsig_geschw)
