@@ -10,6 +10,62 @@ from termcolor import colored
 import logging
 logging.basicConfig(level = logging.DEBUG)
 
+path_insensitive_cache = {}
+
+# http://stackoverflow.com/a/8462613/1083696
+def path_insensitive(path):
+    """
+    Get a case-insensitive epath for use on a case sensitive system.
+    """
+    try:
+        return path_insensitive_cache[path]
+    except KeyError:
+        ret = _path_insensitive(path) or path
+        path_insensitive_cache[path] = ret
+        return ret
+
+def _path_insensitive(path):
+    """
+    Recursive part of path_insensitive to do the work.
+    """
+
+    if path == '' or os.path.exists(path):
+        return path
+
+    base = os.path.basename(path)  # may be a directory or a file
+    dirname = os.path.dirname(path)
+
+    suffix = ''
+    if not base:  # dir ends with a slash?
+        if len(dirname) < len(path):
+            suffix = path[:len(path) - len(dirname)]
+
+        base = os.path.basename(dirname)
+        dirname = os.path.dirname(dirname)
+
+    if not os.path.exists(dirname):
+        dirname = _path_insensitive(dirname)
+        if not dirname:
+            return
+
+    # at this point, the directory exists but not the file
+
+    try:  # we are expecting dirname to be a directory, but it could be a file
+        files = os.listdir(dirname)
+    except OSError:
+        return
+
+    baselow = base.lower()
+    try:
+        basefinal = next(fl for fl in files if fl.lower() == baselow)
+    except StopIteration:
+        return
+
+    if basefinal:
+        return os.path.join(dirname, basefinal) + suffix
+    else:
+        return
+
 all_ones = 2**64 - 1
 
 class RefPunkt(object):
@@ -55,7 +111,7 @@ def get_zusi_relpath(realpath):
     return normalize_zusi_relpath(os.path.relpath(realpath, os.environ['ZUSI3_DATAPATH']))
 
 def get_abspath(zusi_relpath):
-    return os.path.join(os.environ['ZUSI3_DATAPATH'], zusi_relpath.lstrip('\\').replace('\\', os.sep))
+    return path_insensitive(os.path.join(os.environ['ZUSI3_DATAPATH'], zusi_relpath.lstrip('\\').strip().replace('\\', os.sep)))
 
 # {fehlendes Modul}
 missing = set()
