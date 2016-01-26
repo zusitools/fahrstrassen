@@ -273,6 +273,7 @@ def get_signalbild(signal, signalbild_id):
 
 def get_signalbild_fuer_spalte(signal, spalte):
     signalbild_id = all_ones
+    zeile_gefunden = False
     zeilen = signal.findall("./HsigBegriff")
     anz_spalten = len(signal.findall("./VsigBegriff"))
     matrix = signal.findall("./MatrixEintrag")
@@ -284,6 +285,7 @@ def get_signalbild_fuer_spalte(signal, spalte):
         # sonst kann im H/V-System das Signalbild nicht bestimmt werden
         # (bei Hp0 ist Vorsignal dunkel)
         if float(zeile.attrib.get("HsigGeschw", 0.0)) != 0.0 and int(zeile.attrib.get("FahrstrTyp", 0)) & 4 != 0:
+            zeile_gefunden = True
             eintrag = matrix[idx * anz_spalten + spalte]
             signalbild_id &= int(eintrag.attrib.get("Signalbild", 0))
             eintrag_ereignisse = set(int(e.attrib.get("Er", 0)) for e in eintrag.findall("./Ereignis"))
@@ -291,6 +293,9 @@ def get_signalbild_fuer_spalte(signal, spalte):
                 ereignisse = eintrag_ereignisse.copy()
             else:
                 ereignisse = ereignisse.intersection(eintrag_ereignisse)
+
+    if not zeile_gefunden:
+        signalbild_id = 0
 
     return get_signalbild(signal, signalbild_id) + ("" if ereignisse is None or len(ereignisse) == 0 else (" + " + " + ".join(str(e) for e in ereignisse)))
 
