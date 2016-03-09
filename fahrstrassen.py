@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import sys
 import os
 import io
+import argparse
 from collections import namedtuple
 from termcolor import colored
 
@@ -65,8 +66,6 @@ def _path_insensitive(path):
         return os.path.join(dirname, basefinal) + suffix
     else:
         return
-
-# whitelist = open('/tmp/streckenfehler.txt').read().split('\n')
 
 all_ones = 2**64 - 1
 
@@ -154,12 +153,6 @@ def lade_modul(zusi_relpath):
         if int(r.attrib.get("StrElement", 0)) in streckenelemente[zusi_relpath]
     )
     fahrstrassen[zusi_relpath] = tree.findall("./Strecke/Fahrstrasse")
-
-dieses_modul = get_zusi_relpath(sys.argv[1])
-logging.debug("Dieses Modul: {} -> {}".format(sys.argv[1], dieses_modul))
-
-lade_modul(dieses_modul)
-logging.debug("{} Referenzpunkt(e), {} Fahrstrasse(n)".format(len(referenzpunkte[dieses_modul]), len(fahrstrassen[dieses_modul])))
 
 def get_refpunkt(modul, nummer):
     if modul not in referenzpunkte:
@@ -312,7 +305,26 @@ def get_signalbild_fuer_zeile(signal, zeile, ersatzsignal):
 
     return get_signalbild(signal, signalbild_id)
 
-if False:
+# -----
+# main
+# -----
+
+parser = argparse.ArgumentParser(description='Liste von Fahrstrassen in einem Zusi-3-Modul, sowie andere Helferfunktionen.')
+parser.add_argument('dateiname')
+parser.add_argument('--modus', default='fahrstrassen', help='Modus. Moegliche Werte sind: "fahrstrassen" -- gib eine Liste von Fahrstrassen aus. "refpunkte" -- vergleiche generierte und tatsaechliche Namen von Signal-Referenzpunkten.')
+parser.add_argument('--register', action='store_true', help="Gib auch Register in Fahrstrassen aus")
+parser.add_argument('--hsig-ausserhalb-fahrstrasse',  default='ignorieren', choices=['ignorieren', 'ausgeben', 'ausgeben_exkl'], help="Fahrstrassen markieren oder ausgeben, bei denen ein Hauptsignal ausserhalb der Fahrstrasse liegt")
+parser.add_argument('--vsig-geschw', default='ignorieren', choices=['ignorieren', 'ausgeben', 'ausgeben_exkl'], help="Fahrstrassen markieren oder ausgeben, bei denen ein Vorsignal eine hoehere Geschwindigkeit anzeigt als das Hauptsignal mit der niedrigsten Geschwindigkeit in der Fahrstrasse")
+
+args = parser.parse_args()
+
+dieses_modul = get_zusi_relpath(args.dateiname)
+logging.debug("Dieses Modul: {} -> {}".format(args.dateiname, dieses_modul))
+
+lade_modul(dieses_modul)
+logging.debug("{} Referenzpunkt(e), {} Fahrstrasse(n)".format(len(referenzpunkte[dieses_modul]), len(fahrstrassen[dieses_modul])))
+
+if args.modus == 'refpunkte':
   for refnr, (element, richtung, reftyp, info) in referenzpunkte[dieses_modul].items():
     if reftyp == 4:
         sig = element.find("./Info" + ("Norm" if richtung == NORM else "Gegen") + "Richtung/Signal")
@@ -321,9 +333,9 @@ if False:
             if info != info_soll:
                 print("Referenzpunkt {}: ist '{}', soll '{}'".format(refnr, info, info_soll))
 
-if True:
+if args.modus == 'fahrstrassen':
   for f in fahrstrassen[dieses_modul]:
-    print_out = False
+    print_out = args.hsig_ausserhalb_fahrstrasse != 'ausgeben_exkl' and args.vsig_geschw != 'ausgeben_exkl'
     with io.StringIO() as out:
         print("\nFahrstrasse {} {}".format(f.attrib.get("FahrstrTyp", "?"), colored(f.attrib.get("FahrstrName", "?"), 'grey', attrs=['bold'])), file=out)
 
@@ -387,8 +399,12 @@ if True:
                 colored(str_geschw(hsig_geschw), 'red', attrs=['bold']),
                 get_signalbild_fuer_zeile(signal, zeile, ersatzsignal),
             ), file=out)
-            if rp.el_r() not in elemente and (gegen(rp.el_r()) not in elemente or int(signal.attrib.get("SignalFlags", 0)) & 1 == 0):
+
+            if args.hsig_ausserhalb_fahrstrasse != 'ignorieren' and \
+                    rp.el_r() not in elemente and \
+                    (gegen(rp.el_r()) not in elemente or int(signal.attrib.get("SignalFlags", 0)) & 1 == 0):
                 print("   - " + colored("!!! Hauptsignal ausserhalb der Fahrstrasse", 'red', attrs=['bold']), file=out)
+                print_out = True
 
             ksig = signal.find("./KoppelSignal")
             indent = 2
@@ -425,18 +441,23 @@ if True:
             signal = rp.signal()
             spalte = int(sig.attrib.get("FahrstrSignalSpalte", 0))
             vsig_geschw = float(signal.findall("./VsigBegriff")[spalte].attrib.get("VsigGeschw", 0.0))
-            alarm = vsig_geschw != -2.0 and geschw_kleiner(min_geschw, vsig_geschw)
-            print_out |= alarm
-            print(" - Vorsignal {} {} an {} auf Spalte {} ({}) {} {}".format(
+
+            alarm = ''
+            if args.vsig_geschw != 'ignorieren' and vsig_geschw != -2.0 and geschw_kleiner(min_geschw, vsig_geschw):
+                alarm = colored(" !!!!", 'red', attrs=['bold'])
+                print_out = True
+
+            print(" - Vorsignal {} {} an {} auf Spalte {} ({}) {}{}".format(
                 colored(signal.attrib.get("NameBetriebsstelle", "?"), 'cyan'),
                 colored(signal.attrib.get("Signalname", "?"), 'cyan', attrs=['bold']),
                 rp,
                 spalte,
                 colored(str_geschw(vsig_geschw), 'green', attrs=['bold']),
                 get_signalbild_fuer_spalte(signal, spalte),
-                colored("!!!!", 'red', attrs=['bold']) if alarm else "",
+                alarm
             ), file=out)
-            if False: # alarm:
+
+            if alarm != '' and args.vsig_geschw == 'ausgeben_exkl':
                 print("   - Signal-Frames:", file=out)
                 for sigframe in signal.findall("./SignalFrame/Datei"):
                     dateiname = sigframe.attrib.get("Dateiname", "")
@@ -444,18 +465,19 @@ if True:
                 print("   - Hsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("HsigGeschw", 0)) for n in signal.findall("./HsigBegriff")]))), file=out)
                 print("   - Vsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("VsigGeschw", 0)) for n in signal.findall("./VsigBegriff")]))), file=out)
 
-        reg_strs = []
-        for reg in f.findall("./FahrstrRegister"):
-            rp = get_refpunkt(get_modul_aus_dateiknoten(reg), int(reg.attrib.get("Ref", 0)))
-            if not rp.valid():
-                reg_strs.append(colored("Register mit nicht aufloesbarer Referenz {} in Modul {}".format(rp.refnr, rp.modul_kurz()), 'white', 'on_red'))
-                continue
-            richtung = rp.element.find("./Info" + ("Norm" if rp.richtung == NORM else "Gegen") + "Richtung")
-            regnr = richtung.attrib.get("Reg", 0)
-            reg_strs.append("{}{}".format(regnr, "" if rp.modul == dieses_modul else ("[" + rp.modul_kurz() + "]")))
+        if args.register:
+            reg_strs = []
+            for reg in f.findall("./FahrstrRegister"):
+                rp = get_refpunkt(get_modul_aus_dateiknoten(reg), int(reg.attrib.get("Ref", 0)))
+                if not rp.valid():
+                    reg_strs.append(colored("Register mit nicht aufloesbarer Referenz {} in Modul {}".format(rp.refnr, rp.modul_kurz()), 'white', 'on_red'))
+                    continue
+                richtung = rp.element.find("./Info" + ("Norm" if rp.richtung == NORM else "Gegen") + "Richtung")
+                regnr = richtung.attrib.get("Reg", 0)
+                reg_strs.append("{}{}".format(regnr, "" if rp.modul == dieses_modul else ("[" + rp.modul_kurz() + "]")))
 
-        print(" - Register: {}".format(", ".join(reg_strs)), file=out)
+            print(" - Register: {}".format(", ".join(reg_strs)), file=out)
 
-        if True: # f.attrib.get("FahrstrName", "?") in whitelist and print_out:
+        if print_out:
             out.seek(0)
             print(out.read())
