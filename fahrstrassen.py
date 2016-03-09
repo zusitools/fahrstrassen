@@ -444,6 +444,18 @@ if True:
                 print("   - Hsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("HsigGeschw", 0)) for n in signal.findall("./HsigBegriff")]))), file=out)
                 print("   - Vsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("VsigGeschw", 0)) for n in signal.findall("./VsigBegriff")]))), file=out)
 
+        reg_strs = []
+        for reg in f.findall("./FahrstrRegister"):
+            rp = get_refpunkt(get_modul_aus_dateiknoten(reg), int(reg.attrib.get("Ref", 0)))
+            if not rp.valid():
+                reg_strs.append(colored("Register mit nicht aufloesbarer Referenz {} in Modul {}".format(rp.refnr, rp.modul_kurz()), 'white', 'on_red'))
+                continue
+            richtung = rp.element.find("./Info" + ("Norm" if rp.richtung == NORM else "Gegen") + "Richtung")
+            regnr = richtung.attrib.get("Reg", 0)
+            reg_strs.append("{}{}".format(regnr, "" if rp.modul == dieses_modul else ("[" + rp.modul_kurz() + "]")))
+
+        print(" - Register: {}".format(", ".join(reg_strs)), file=out)
+
         if True: # f.attrib.get("FahrstrName", "?") in whitelist and print_out:
             out.seek(0)
             print(out.read())
