@@ -313,6 +313,7 @@ parser = argparse.ArgumentParser(description='Liste von Fahrstrassen in einem Zu
 parser.add_argument('dateiname')
 parser.add_argument('--modus', default='fahrstrassen', help='Modus. Moegliche Werte sind: "fahrstrassen" -- gib eine Liste von Fahrstrassen aus. "refpunkte" -- vergleiche generierte und tatsaechliche Namen von Signal-Referenzpunkten.')
 parser.add_argument('--register', action='store_true', help="Gib auch Register in Fahrstrassen aus")
+parser.add_argument('--weichen', action='store_true', help="Gib auch Weichen in Fahrstrassen aus")
 parser.add_argument('--hsig-ausserhalb-fahrstrasse',  default='ignorieren', choices=['ignorieren', 'ausgeben', 'ausgeben_exkl'], help="Fahrstrassen markieren oder ausgeben, bei denen ein Hauptsignal ausserhalb der Fahrstrasse liegt")
 parser.add_argument('--vsig-geschw', default='ignorieren', choices=['ignorieren', 'ausgeben', 'ausgeben_exkl'], help="Fahrstrassen markieren oder ausgeben, bei denen ein Vorsignal eine hoehere Geschwindigkeit anzeigt als das Hauptsignal mit der niedrigsten Geschwindigkeit in der Fahrstrasse")
 
@@ -477,6 +478,14 @@ if args.modus == 'fahrstrassen':
                 reg_strs.append("{}{}".format(regnr, "" if rp.modul == dieses_modul else ("[" + rp.modul_kurz() + "]")))
 
             print(" - Register: {}".format(", ".join(reg_strs)), file=out)
+
+        if args.weichen:
+            for weiche in f.findall("./FahrstrWeiche"):
+                rp = get_refpunkt(get_modul_aus_dateiknoten(weiche), int(weiche.attrib.get("Ref", 0)))
+                if not rp.valid():
+                    print(colored("Weiche mit nicht aufloesbarer Referenz {} in Modul {}".format(rp.refnr, rp.modul_kurz()), 'white', 'on_red'), file=out)
+                    continue
+                print(" - Weiche an {} auf Nachfolger {}".format(rp, weiche.attrib.get("FahrstrWeichenlage", 0)), file=out)
 
         if print_out:
             out.seek(0)
