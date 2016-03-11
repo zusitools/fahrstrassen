@@ -338,7 +338,11 @@ if args.modus == 'fahrstrassen':
   for f in fahrstrassen[dieses_modul]:
     print_out = args.hsig_ausserhalb_fahrstrasse != 'ausgeben_exkl' and args.vsig_geschw != 'ausgeben_exkl'
     with io.StringIO() as out:
-        print("\nFahrstrasse {} {}".format(f.attrib.get("FahrstrTyp", "?"), colored(f.attrib.get("FahrstrName", "?"), 'grey', attrs=['bold'])), file=out)
+        nichtalsziel = float(f.attrib.get("ZufallsWert", 0))
+        print("\nFahrstrasse {} {}{}".format(
+            f.attrib.get("FahrstrTyp", "?"),
+            colored(f.attrib.get("FahrstrName", "?"), 'grey', attrs=['bold']),
+            '' if nichtalsziel == 0 else ' (nicht als Ziel: {:.0f}%)'.format(nichtalsziel * 100)), file=out)
 
         min_geschw = -1
 
