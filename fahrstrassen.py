@@ -5,7 +5,7 @@ import sys
 import os
 import io
 import argparse
-from collections import namedtuple
+from collections import defaultdict
 from termcolor import colored
 
 import logging
@@ -140,6 +140,9 @@ referenzpunkte = dict()
 # Modul -> [<Fahrstrasse>-Knoten]
 fahrstrassen = dict()
 
+# Modul -> [Modulname]
+nachbarmodule = dict()
+
 def lade_modul(zusi_relpath):
     tree = ET.parse(get_abspath(zusi_relpath))
     # Elementnummer -> <StrElement>-Knoten
@@ -153,6 +156,7 @@ def lade_modul(zusi_relpath):
         if int(r.attrib.get("StrElement", 0)) in streckenelemente[zusi_relpath]
     )
     fahrstrassen[zusi_relpath] = tree.findall("./Strecke/Fahrstrasse")
+    nachbarmodule[zusi_relpath] = [get_modul_aus_dateiknoten(n) for n in tree.findall("./Strecke/ModulDateien")]
 
 def get_refpunkt(modul, nummer):
     if modul not in referenzpunkte:
@@ -246,7 +250,7 @@ def get_animationen(signal_ls3_relpath):
         animationen[signal_ls3_relpath] = [n.attrib.get("AniBeschreibung", "?") for n in tree.findall("./Landschaft/Animation")]
     return animationen[signal_ls3_relpath]
 
-def get_signalbild(signal, signalbild_id):
+def get_signalbild_fuer_id(signal, signalbild_id):
     idx = 0
     result = []
     for sigframe in signal.findall("./SignalFrame/Datei"):
@@ -290,7 +294,7 @@ def get_signalbild_fuer_spalte(signal, spalte):
     if not zeile_gefunden:
         signalbild_id = 0
 
-    return get_signalbild(signal, signalbild_id) + ("" if ereignisse is None or len(ereignisse) == 0 else (" + " + " + ".join(str(e) for e in ereignisse)))
+    return get_signalbild_fuer_id(signal, signalbild_id) + ("" if ereignisse is None or len(ereignisse) == 0 else (" + " + " + ".join(str(e) for e in ereignisse)))
 
 def get_signalbild_fuer_zeile(signal, zeile, ersatzsignal):
     if ersatzsignal:
@@ -303,7 +307,25 @@ def get_signalbild_fuer_zeile(signal, zeile, ersatzsignal):
     for i in range(0, anz_spalten):
         signalbild_id &= int(matrix[zeile * anz_spalten + i].attrib.get("Signalbild", 0))
 
-    return get_signalbild(signal, signalbild_id)
+    return get_signalbild_fuer_id(signal, signalbild_id)
+
+def get_signalbild_id_fuer_zeile_und_spalte(signal, zeile, spalte, ersatzsignal):
+    if ersatzsignal:
+        matrix = signal.findall("./Ersatzsignal/MatrixEintrag")
+        return int(matrix[zeile].attrib.get("Signalbild", 0))
+    else:
+        anz_spalten = len(signal.findall("./VsigBegriff"))
+        matrix = signal.findall("./MatrixEintrag")
+        return int(matrix[zeile * anz_spalten + spalte].attrib.get("Signalbild", 0))
+
+def get_signalgeschw_fuer_zeile_und_spalte(signal, zeile, spalte, ersatzsignal):
+    if ersatzsignal:
+        matrix = signal.findall("./Ersatzsignal/MatrixEintrag")
+        return float(matrix[zeile].attrib.get("MatrixGeschw", 0))
+    else:
+        anz_spalten = len(signal.findall("./VsigBegriff"))
+        matrix = signal.findall("./MatrixEintrag")
+        return float(matrix[zeile * anz_spalten + spalte].attrib.get("MatrixGeschw", 0))
 
 # -----
 # main
@@ -311,11 +333,12 @@ def get_signalbild_fuer_zeile(signal, zeile, ersatzsignal):
 
 parser = argparse.ArgumentParser(description='Liste von Fahrstrassen in einem Zusi-3-Modul, sowie andere Helferfunktionen.')
 parser.add_argument('dateiname')
-parser.add_argument('--modus', default='fahrstrassen', help='Modus. Moegliche Werte sind: "fahrstrassen" -- gib eine Liste von Fahrstrassen aus. "refpunkte" -- vergleiche generierte und tatsaechliche Namen von Signal-Referenzpunkten.')
+parser.add_argument('--modus', default='fahrstrassen', help='Modus. Moegliche Werte sind: "fahrstrassen" -- gib eine Liste von Fahrstrassen aus. "an_signal" -- gib eine Liste von Fahrstrassenkombinationen am angegebenen Signal (--signal) aus. "refpunkte" -- vergleiche generierte und tatsaechliche Namen von Signal-Referenzpunkten.')
 parser.add_argument('--register', action='store_true', help="Gib auch Register in Fahrstrassen aus")
 parser.add_argument('--weichen', action='store_true', help="Gib auch Weichen in Fahrstrassen aus")
 parser.add_argument('--hsig-ausserhalb-fahrstrasse',  default='ignorieren', choices=['ignorieren', 'ausgeben', 'ausgeben_exkl'], help="Fahrstrassen markieren oder ausgeben, bei denen ein Hauptsignal ausserhalb der Fahrstrasse liegt")
 parser.add_argument('--vsig-geschw', default='ignorieren', choices=['ignorieren', 'ausgeben', 'ausgeben_exkl'], help="Fahrstrassen markieren oder ausgeben, bei denen ein Vorsignal eine hoehere Geschwindigkeit anzeigt als das Hauptsignal mit der niedrigsten Geschwindigkeit in der Fahrstrasse")
+parser.add_argument('--signal', action='store', help="Signalbezeichnung (z.B. \"S3\") fuer modus=an_signal")
 
 args = parser.parse_args()
 
