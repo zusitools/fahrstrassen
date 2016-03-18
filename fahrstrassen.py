@@ -334,14 +334,127 @@ if args.modus == 'refpunkte':
             if info != info_soll:
                 print("Referenzpunkt {}: ist '{}', soll '{}'".format(refnr, info, info_soll))
 
+if args.modus == 'an_signal':
+    for m in nachbarmodule[dieses_modul]:
+      lade_modul(m)
+
+    refpunkte = []
+
+    for refnr, (element, richtung, reftyp, info) in referenzpunkte[dieses_modul].items():
+        if reftyp == 4:
+            sig = element.find("./Info" + ("Norm" if richtung == NORM else "Gegen") + "Richtung/Signal")
+            if sig is not None and (args.signal is None or sig.attrib.get("Signalname", "") == args.signal):
+                refpunkte.append(get_refpunkt(dieses_modul, refnr))
+
+    if len(refpunkte) == 0:
+        print("Keine Referenzpunkte fuer Signal '{}' gefunden".format(args.signal))
+    else:
+        for rp in refpunkte:
+            # Fahrstrassen, in denen das angegebene Signal als Hsig bzw. Vsig enthalten ist.
+            hsig_fahrstrassen = set()
+            vsig_fahrstrassen = set()
+
+            for fahrstrassen_liste in fahrstrassen.values():
+                for fahrstrasse in fahrstrassen_liste:
+                    if any(int(n.attrib.get("Ref", 0)) == rp.refnr
+                            and get_modul_aus_dateiknoten(n) == rp.modul
+                            for n in fahrstrasse.findall("./FahrstrSignal")):
+                        hsig_fahrstrassen.add(fahrstrasse)
+
+                    if any(int(n.attrib.get("Ref", 0)) == rp.refnr
+                            and get_modul_aus_dateiknoten(n) == rp.modul
+                            for n in fahrstrasse.findall("./FahrstrVSignal")):
+                        vsig_fahrstrassen.add(fahrstrasse)
+
+            # string -> [Fahrstrassenname]
+            kombinationen = defaultdict(list)
+
+            for fahrstr_hsig in hsig_fahrstrassen:
+                for fahrstr_vsig in vsig_fahrstrassen:
+                    ziel1 = fahrstr_hsig.find("./FahrstrZiel")
+                    start2 = fahrstr_vsig.find("./FahrstrStart")
+
+                    if ziel1 is None or start2 is None \
+                            or ziel1.attrib.get("Ref", 0) != start2.attrib.get("Ref", 0) \
+                            or get_modul_aus_dateiknoten(ziel1) != get_modul_aus_dateiknoten(start2):
+                        continue
+
+                    # <Signal>-Knoten -> (zeile, spalte, ist_ersatzsignal)
+                    hsig_stellungen = {}
+
+                    for an_hsig in fahrstr_hsig.findall("./FahrstrSignal"):
+                        signal = get_refpunkt(get_modul_aus_dateiknoten(an_hsig), int(an_hsig.attrib["Ref"])).signal()
+
+                        # Finde Spalte mit Spaltengeschwindigkeit 0
+                        spalte_geschw_0 = 0
+                        for idx, vsig_begriff in enumerate(signal.findall("VsigBegriff")):
+                            if vsig_begriff.attrib.get("VsigGeschw", 0) == 0:
+                                spalte_geschw_0 = idx
+                                break
+
+                        zeile = int(an_hsig.attrib.get("FahrstrSignalZeile", 0))
+                        ersatzsignal = int(an_hsig.attrib.get("FahrstrSignalErsatzsignal", 0)) == 1
+
+                        hsig_stellungen[signal] = (zeile, spalte_geschw_0, ersatzsignal)
+
+                    for ab_vsig in fahrstr_vsig.findall("./FahrstrVSignal"):
+                        signal = get_refpunkt(get_modul_aus_dateiknoten(ab_vsig), int(ab_vsig.attrib["Ref"])).signal()
+
+                        if signal not in hsig_stellungen:
+                            continue
+
+                        hsig_stellung = hsig_stellungen[signal]
+                        spalte_neu = int(ab_vsig.attrib.get("FahrstrSignalSpalte", 0))
+
+                        geschw_alt = get_signalgeschw_fuer_zeile_und_spalte(signal, *hsig_stellung)
+                        geschw_neu = get_signalgeschw_fuer_zeile_und_spalte(signal, hsig_stellung[0], spalte_neu, hsig_stellung[2])
+
+                        signalbild_alt = get_signalbild_id_fuer_zeile_und_spalte(signal, *hsig_stellung)
+                        if geschw_alt == geschw_neu:
+                            hsig_stellung_neu = (hsig_stellung[0], spalte_neu, hsig_stellung[2])
+                            signalbild_neu = get_signalbild_id_fuer_zeile_und_spalte(signal, *hsig_stellung_neu)
+
+                            weg = signalbild_alt & ~signalbild_neu
+                            dazu = signalbild_neu & ~signalbild_alt
+
+                            key = "{} -> {} ({} -> {})".format(
+                                colored(get_signalbild_fuer_id(signal, weg), 'red', attrs=['bold']),
+                                colored(get_signalbild_fuer_id(signal, dazu), 'blue', attrs=['bold']),
+                                colored(get_signalbild_fuer_id(signal, signalbild_alt), 'red'),
+                                colored(get_signalbild_fuer_id(signal, signalbild_neu), 'blue'),
+                            )
+                        else:
+                            key = "{} -> {}".format(
+                                colored(get_signalbild_fuer_id(signal, signalbild_alt), 'red', attrs=['bold']),
+                                colored("<bleibt auf Vsig=0 wegen unterschiedlicher Signalgeschwindigkeiten: {} -> {}>".format(str_geschw(geschw_alt), str_geschw(geschw_neu)), 'blue', attrs=['bold']),
+                            )
+
+                        kombinationen[key].append("{} + {}".format(
+                            colored(fahrstr_hsig.attrib.get("FahrstrName", ""), 'red'),
+                            colored(fahrstr_vsig.attrib.get("FahrstrName", ""), 'blue'),
+                        ))
+
+            print("\n\n{} {}".format(
+                colored(rp.signal().attrib.get("NameBetriebsstelle", "?"), 'grey'),
+                colored(rp.signal().attrib.get("Signalname", "?"), 'grey', attrs=['bold']),
+            ))
+
+            for key, values in sorted(kombinationen.items()):
+                print("\n" + key)
+                for value in values:
+                    print(" - " + value)
+
 if args.modus == 'fahrstrassen':
   for f in fahrstrassen[dieses_modul]:
     print_out = args.hsig_ausserhalb_fahrstrasse != 'ausgeben_exkl' and args.vsig_geschw != 'ausgeben_exkl'
     with io.StringIO() as out:
         nichtalsziel = float(f.attrib.get("ZufallsWert", 0))
-        print("\nFahrstrasse {} {}{}".format(
+        rglggl = int(f.attrib.get("RglGgl", 0))
+        print("\nFahrstrasse {} {} {}, {:.0f}m{}".format(
             f.attrib.get("FahrstrTyp", "?"),
             colored(f.attrib.get("FahrstrName", "?"), 'grey', attrs=['bold']),
+            "Regelgleis" if rglggl == 1 else ("Gegengleis" if rglggl == 2 else ("eingleisig" if rglggl == 3 else "?")),
+            float(f.attrib.get("Laenge", 0)),
             '' if nichtalsziel == 0 else ' (nicht als Ziel: {:.0f}%)'.format(nichtalsziel * 100)), file=out)
 
         min_geschw = -1
