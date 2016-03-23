@@ -581,7 +581,17 @@ if args.modus == 'fahrstrassen':
                 continue
             signal = rp.signal()
             spalte = int(sig.attrib.get("FahrstrSignalSpalte", 0))
-            vsig_geschw = float(signal.findall("./VsigBegriff")[spalte].attrib.get("VsigGeschw", 0.0))
+            try:
+                vsig_geschw = float(signal.findall("./VsigBegriff")[spalte].attrib.get("VsigGeschw", 0.0))
+            except IndexError:
+                print(" - Vorsignal {} {} an {} auf Spalte {} ({})".format(
+                    colored(signal.attrib.get("NameBetriebsstelle", "?"), 'cyan'),
+                    colored(signal.attrib.get("Signalname", "?"), 'cyan', attrs=['bold']),
+                    rp,
+                    spalte,
+                    colored('ungueltige Spaltennummer', 'white', 'on_red'),
+                ), file=out)
+                continue
 
             alarm = ''
             if args.vsig_geschw != 'ignorieren' and vsig_geschw != -2.0 and geschw_kleiner(min_geschw, vsig_geschw):
