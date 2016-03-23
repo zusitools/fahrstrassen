@@ -473,10 +473,10 @@ if args.modus == 'fahrstrassen':
     with io.StringIO() as out:
         nichtalsziel = float(f.attrib.get("ZufallsWert", 0))
         rglggl = int(f.attrib.get("RglGgl", 0))
-        print("\nFahrstrasse {} {} {}, {:.0f}m{}".format(
+        print("\nFahrstrasse {} {}   {}, {:.0f}m{}".format(
             f.attrib.get("FahrstrTyp", "?"),
             colored(f.attrib.get("FahrstrName", "?"), 'grey', attrs=['bold']),
-            "Regelgleis" if rglggl == 1 else ("Gegengleis" if rglggl == 2 else ("eingleisig" if rglggl == 3 else "?")),
+            "Bahnhof" if rglggl == 0 else ("eingleisig" if rglggl == 1 else ("Regelgleis" if rglggl == 2 else ("Gegengleis" if rglggl == 3 else "?"))),
             float(f.attrib.get("Laenge", 0)),
             '' if nichtalsziel == 0 else ' (nicht als Ziel: {:.0f}%)'.format(nichtalsziel * 100)), file=out)
 
