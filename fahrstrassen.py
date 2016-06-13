@@ -6,7 +6,12 @@ import os
 import io
 import argparse
 from collections import defaultdict
-from termcolor import colored
+
+try:
+    from termcolor import colored
+except ImportError:
+    def colored(s, *args, **kwargs):
+        return s
 
 import logging
 # logging.basicConfig(level = logging.DEBUG)
