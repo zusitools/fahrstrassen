@@ -72,6 +72,14 @@ all_ones = 2**64 - 1
 NORM = True
 GEGEN = False
 
+def str_el_ri(modul, element, richtung):
+    global dieses_modul
+    return "Element {}{}{}".format(
+        element.attrib.get("Nr", "0"),
+        'n' if richtung == "Norm" else 'g',
+        "" if modul == dieses_modul else "[{}]".format(os.path.basename(modul.replace('\\', os.sep))),
+    )
+
 class RefPunkt(object):
     def __init__(self, modul, refnr, info, reftyp, element, richtung):
         self.modul = modul
@@ -88,6 +96,12 @@ class RefPunkt(object):
             'n' if self.richtung == NORM else 'g',
             "" if self.modul == dieses_modul else "[{}]".format(self.modul_kurz())
         )
+
+    def __eq__(self, other):
+        return isinstance(other, RefPunkt) and self.modul == other.modul and self.refnr == other.refnr
+
+    def __hash__(self):
+        return hash((self.modul, self.refnr))
 
     def valid(self):
         return self.element is not None
@@ -336,6 +350,7 @@ parser.add_argument('dateiname')
 parser.add_argument('--modus', default='fahrstrassen', help='Modus. Moegliche Werte sind: "fahrstrassen" -- gib eine Liste von Fahrstrassen aus. "an_signal" -- gib eine Liste von Fahrstrassenkombinationen am angegebenen Signal (--signal) aus. "refpunkte" -- vergleiche generierte und tatsaechliche Namen von Signal-Referenzpunkten.')
 parser.add_argument('--register', action='store_true', help="Gib auch Register in Fahrstrassen aus")
 parser.add_argument('--weichen', action='store_true', help="Gib auch Weichen in Fahrstrassen aus")
+parser.add_argument('--bue', action='store_true', help="Gib auch Bahnuebergangsereignisse in Fahrstrassen aus")
 parser.add_argument('--hsig-ausserhalb-fahrstrasse',  default='ignorieren', choices=['ignorieren', 'ausgeben', 'ausgeben_exkl'], help="Fahrstrassen markieren oder ausgeben, bei denen ein Hauptsignal ausserhalb der Fahrstrasse liegt")
 parser.add_argument('--vsig-geschw', default='ignorieren', choices=['ignorieren', 'ausgeben', 'ausgeben_exkl'], help="Fahrstrassen markieren oder ausgeben, bei denen ein Vorsignal eine hoehere Geschwindigkeit anzeigt als das Hauptsignal mit der niedrigsten Geschwindigkeit in der Fahrstrasse")
 parser.add_argument('--signal', action='store', help="Signalbezeichnung (z.B. \"S3\") fuer modus=an_signal")
@@ -515,6 +530,29 @@ if args.modus == 'fahrstrassen':
                 if akt is not None:
                     elemente.append(akt)
 
+        # Referenzpunkt -> [modul, el, ri, schliessen]
+        bue = defaultdict(list)
+
+        if args.bue:
+            for modul, el, ri in elemente:
+                for ereignis in el.findall("./Info" + ("Norm" if ri == NORM else "Gegen") + "Richtung/Ereignis"):
+                    er_nr = int(ereignis.get("Er", 0))
+                    if er_nr in {27, 1000027}:
+                        # TODO: nur 1x pro Streckenmodul ausgeben
+                        try:
+                            rp = get_refpunkt(normalize_zusi_relpath(ereignis.get("Beschr", "")), int(ereignis.get("Wert", 0)))
+                        except:
+                            print(" - " + colored("Bahnuebergang oeffnen/schliessen mit ungueltiger Referenzangabe: Modul '{}', Referenznr. '{}'".format(ereignis.get("Beschr", ""), ereignis.get("Wert", "")), 'white', 'on_red') + " an {}".format(str_el_ri(modul, el, ri)), file=out)
+                        if not rp.valid():
+                            print(" - " + colored("Bahnuebergang oeffnen/schliessen mit nicht aufloesbarer Referenz {} in Modul {}".format(rp.refnr, rp.modul), 'white', 'on_red') + " an {}".format(str_el_ri(modul, el, ri)), file=out)
+                            continue
+                        signal = rp.signal()
+                        if signal is None:
+                            print(" - " + colored("Bahnuebergang oeffnen/schliessen mit fehlendem Signal an {} (Referenznummer {})".format(rp, rp.refnr), 'white', 'on_red') + " an {}".format(str_el_ri(modul, el, ri)), file=out)
+                            continue
+
+                        bue[rp].append((modul, el, ri, er_nr == 27))
+
         for sig in f.findall("./FahrstrSignal"):
             rp = get_refpunkt(get_modul_aus_dateiknoten(sig), int(sig.attrib.get("Ref", 0)))
             if not rp.valid():
@@ -531,7 +569,8 @@ if args.modus == 'fahrstrassen':
             if ersatzsignal or hsig_geschw != 0:
                 # == 0 ohne Ersatzsignal koennen z.B. Flachkreuzungen sein
                 min_geschw = geschw_min(min_geschw, hsig_geschw)
-            print(" - Hauptsignal {} {} an {} auf {} {} ({}) {}".format(
+            print(" - Hauptsignal{} {} {} an {} auf {} {} ({}) {}".format(
+                ("+" if int(signal.attrib.get("SignalFlags", 0)) & 8 != 0 else ""),
                 colored(signal.attrib.get("NameBetriebsstelle", "?"), 'blue'),
                 colored(signal.attrib.get("Signalname", "?"), 'blue', attrs=['bold']),
                 rp,
@@ -540,6 +579,14 @@ if args.modus == 'fahrstrassen':
                 colored(str_geschw(hsig_geschw), 'red', attrs=['bold']),
                 get_signalbild_fuer_zeile(signal, zeile, ersatzsignal),
             ), file=out)
+
+            for modul, el, ri, schliessen in bue[rp]:
+                if schliessen:
+                    print("   - " + colored("!!! Bue schliessen an {}".format(str_el_ri(modul, el, ri)), 'red', attrs=['bold']), file=out)
+            for modul, el, ri, schliessen in bue[rp]:
+                if not schliessen:
+                    print("   - " + colored("Bue oeffnen an {}".format(str_el_ri(modul, el, ri)), 'green'), file=out)
+            del bue[rp]
 
             if args.hsig_ausserhalb_fahrstrasse != 'ignorieren' and \
                     rp.el_r() not in elemente and \
@@ -562,8 +609,9 @@ if args.modus == 'fahrstrassen':
                 if zeile >= len(hsig_begriffe):
                     print("{} - ".format(" " * indent) + colored("Koppelsignal hat nicht genuegend Zeilen an {} (Referenznummer {})".format(rp, rp.refnr), 'white', 'on_red'), file=out)
                     break
-                print("{} - Koppelsignal {} {} an {} auf Zeile {} ({}) {}".format(
+                print("{} - Koppelsignal{} {} {} an {} auf Zeile {} ({}) {}".format(
                     " " * indent,
+                    ("+" if int(koppelsignal.attrib.get("SignalFlags", 0)) & 8 != 0 else ""),
                     colored(koppelsignal.attrib.get("NameBetriebsstelle", "?"), 'blue'),
                     colored(koppelsignal.attrib.get("Signalname", "?"), 'blue', attrs=['bold']),
                     rp,
@@ -615,6 +663,54 @@ if args.modus == 'fahrstrassen':
                     print("     - {} {}".format(dateiname, ", ".join(get_animationen(dateiname))), file=out)
                 print("   - Hsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("HsigGeschw", 0)) for n in signal.findall("./HsigBegriff")]))), file=out)
                 print("   - Vsig-Geschwindigkeiten: {}".format(", ".join(map(str_geschw, [float(n.attrib.get("VsigGeschw", 0)) for n in signal.findall("./VsigBegriff")]))), file=out)
+
+        if args.bue:
+            for rp, values in bue.items():
+                signal = rp.signal()
+
+                print(" - Bahnuebergang{} {} {} an {}".format(
+                    ("+" if int(signal.attrib.get("SignalFlags", 0)) & 8 != 0 else ""),
+                    colored(signal.attrib.get("NameBetriebsstelle", "?"), 'green'),
+                    colored(signal.attrib.get("Signalname", "?"), 'green', attrs=['bold']),
+                    rp,
+                ), file=out)
+
+                ksig = signal.find("./KoppelSignal")
+                indent = 2
+                while ksig is not None:
+                    rp = get_refpunkt(get_modul_aus_dateiknoten(ksig, rp.modul), int(ksig.attrib.get("ReferenzNr", 0)))
+                    if not rp.valid():
+                        print("{} - ".format(" " * indent) + colored("Koppelsignal mit nicht aufloesbarer Referenz {} in Modul {}".format(rp.refnr, rp.modul), 'white', 'on_red'), file=out)
+                        break
+                    koppelsignal = rp.signal()
+                    if koppelsignal is None:
+                        print("{} - ".format(" " * indent) + colored("Koppelsignal-Referenz mit fehlendem Signal an {} (Referenznummer {})".format(rp, rp.refnr), 'white', 'on_red'), file=out)
+                        break
+                    print("{} - Koppelsignal{} {} {} an {}".format(
+                        " " * indent,
+                        ("+" if int(koppelsignal.attrib.get("SignalFlags", 0)) & 8 != 0 else ""),
+                        colored(koppelsignal.attrib.get("NameBetriebsstelle", "?"), 'green'),
+                        colored(koppelsignal.attrib.get("Signalname", "?"), 'green', attrs=['bold']),
+                        rp,
+                    ), file=out)
+                    indent += 2
+                    ksig = koppelsignal.find("./KoppelSignal")
+
+                hat_schliessen = False
+                for modul, el, ri, schliessen in values:
+                    if schliessen:
+                        hat_schliessen = True
+                        print("   - " + colored("Bue schliessen", 'green') + " an {}".format(str_el_ri(modul, el, ri)), file=out)
+                if not hat_schliessen:
+                    print("   - " + colored("!!! Kein Schliessen-Ereignis in der Fahrstrasse", 'red', attrs=['bold']), file=out)
+
+                hat_oeffnen = False
+                for modul, el, ri, schliessen in values:
+                    if not schliessen:
+                        hat_oeffnen = True
+                        print("   - " + colored("Bue oeffnen", 'green') + " an {}".format(str_el_ri(modul, el, ri)), file=out)
+                if not hat_oeffnen:
+                    print("   - " + colored("!!! Kein Oeffnen-Ereignis in der Fahrstrasse", 'red', attrs=['bold']), file=out)
 
         if args.register:
             reg_strs = []
