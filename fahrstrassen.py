@@ -383,7 +383,10 @@ if args.modus == 'refpunkte':
 
 if args.modus == 'an_signal':
     for m in nachbarmodule[dieses_modul]:
-      lade_modul(m)
+        try:
+            lade_modul(m)
+        except FileNotFoundError:
+            pass
 
     refpunkte = []
 
