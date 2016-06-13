@@ -356,6 +356,7 @@ def get_signalgeschw_fuer_zeile_und_spalte(signal, zeile, spalte, ersatzsignal):
 parser = argparse.ArgumentParser(description='Liste von Fahrstrassen in einem Zusi-3-Modul, sowie andere Helferfunktionen.')
 parser.add_argument('dateiname')
 parser.add_argument('--modus', default='fahrstrassen', help='Modus. Moegliche Werte sind: "fahrstrassen" -- gib eine Liste von Fahrstrassen aus. "an_signal" -- gib eine Liste von Fahrstrassenkombinationen am angegebenen Signal (--signal) aus. "refpunkte" -- vergleiche generierte und tatsaechliche Namen von Signal-Referenzpunkten.')
+parser.add_argument('--sortiert', action='store_true', help="Sortiere Fahrstrassen nach Namen")
 parser.add_argument('--register', action='store_true', help="Gib auch Register in Fahrstrassen aus")
 parser.add_argument('--weichen', action='store_true', help="Gib auch Weichen in Fahrstrassen aus")
 parser.add_argument('--bue', action='store_true', help="Gib auch Bahnuebergangsereignisse in Fahrstrassen aus")
@@ -491,6 +492,8 @@ if args.modus == 'an_signal':
                     print(" - " + value)
 
 if args.modus == 'fahrstrassen':
+  if args.sortiert:
+    fahrstrassen[dieses_modul].sort(key = lambda f: f.attrib.get("FahrstrName", ""))
   for f in fahrstrassen[dieses_modul]:
     print_out = args.hsig_ausserhalb_fahrstrasse != 'ausgeben_exkl' and args.vsig_geschw != 'ausgeben_exkl'
     with io.StringIO() as out:
