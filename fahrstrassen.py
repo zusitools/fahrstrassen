@@ -265,8 +265,11 @@ animationen = dict()
 def get_animationen(signal_ls3_relpath):
     signal_ls3_relpath = normalize_zusi_relpath(signal_ls3_relpath)
     if signal_ls3_relpath not in animationen:
-        tree = ET.parse(get_abspath(signal_ls3_relpath))
-        animationen[signal_ls3_relpath] = [n.attrib.get("AniBeschreibung", "?") for n in tree.findall("./Landschaft/Animation")]
+        try:
+            tree = ET.parse(get_abspath(signal_ls3_relpath))
+            animationen[signal_ls3_relpath] = [n.attrib.get("AniBeschreibung", "?") for n in tree.findall("./Landschaft/Animation")]
+        except FileNotFoundError:
+            animationen[signal_ls3_relpath] = []
     return animationen[signal_ls3_relpath]
 
 def get_signalbild_fuer_id(signal, signalbild_id):
