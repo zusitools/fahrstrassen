@@ -577,6 +577,9 @@ if args.modus == 'fahrstrassen':
                 print(" - " + colored("Hauptsignal-Referenz mit fehlendem Signal an {} (Referenznummer {})".format(rp, rp.refnr), 'white', 'on_red'), file=out)
                 continue
 
+            hat_zaehler = int(signal.attrib.get("SignalFlags", 0)) & 8 != 0
+            hat_bue = False
+
             ersatzsignal = int(sig.attrib.get("FahrstrSignalErsatzsignal", 0)) == 1
             zeile = int(sig.attrib.get("FahrstrSignalZeile", 0))
             hsig_geschw = float(signal.findall("./HsigBegriff")[zeile].attrib.get("HsigGeschw", 0.0)) if not ersatzsignal else 0.0
@@ -584,7 +587,7 @@ if args.modus == 'fahrstrassen':
                 # == 0 ohne Ersatzsignal koennen z.B. Flachkreuzungen sein
                 min_geschw = geschw_min(min_geschw, hsig_geschw)
             print(" - Hauptsignal{} {} {} an {} auf {} {} ({}) {}".format(
-                ("+" if int(signal.attrib.get("SignalFlags", 0)) & 8 != 0 else ""),
+                ("+" if hat_zaehler else ""),
                 colored(signal.attrib.get("NameBetriebsstelle", "?"), 'blue'),
                 colored(signal.attrib.get("Signalname", "?"), 'blue', attrs=['bold']),
                 rp,
@@ -596,10 +599,12 @@ if args.modus == 'fahrstrassen':
 
             for modul, el, ri, schliessen in bue[rp]:
                 if schliessen:
+                    hat_bue = True
                     print("   - " + colored("!!! Bue schliessen an {}".format(str_el_ri(modul, el, ri)), 'red', attrs=['bold']), file=out)
             for modul, el, ri, schliessen in bue[rp]:
                 if not schliessen:
-                    print("   - " + colored("Bue oeffnen an {}".format(str_el_ri(modul, el, ri)), 'green'), file=out)
+                    hat_bue = True
+                    print("   - " + colored("Bue oeffnen", 'green') + " an {}".format(str_el_ri(modul, el, ri)), file=out)
             del bue[rp]
 
             if args.hsig_ausserhalb_fahrstrasse != 'ignorieren' and \
@@ -619,6 +624,7 @@ if args.modus == 'fahrstrassen':
                 if koppelsignal is None:
                     print("{} - ".format(" " * indent) + colored("Koppelsignal-Referenz mit fehlendem Signal an {} (Referenznummer {})".format(rp, rp.refnr), 'white', 'on_red'), file=out)
                     break
+                hat_zaehler = hat_zaehler or int(koppelsignal.attrib.get("SignalFlags", 0)) & 8 != 0
                 hsig_begriffe = koppelsignal.findall("./HsigBegriff")
                 if zeile >= len(hsig_begriffe):
                     print("{} - ".format(" " * indent) + colored("Koppelsignal hat nicht genuegend Zeilen an {} (Referenznummer {})".format(rp, rp.refnr), 'white', 'on_red'), file=out)
@@ -635,6 +641,9 @@ if args.modus == 'fahrstrassen':
                 ), file=out)
                 indent += 2
                 ksig = koppelsignal.find("./KoppelSignal")
+
+            if hat_bue and not hat_zaehler:
+                print("   - " + colored("!!! Kein Signal mit Bue-Zaehler in der Koppelungskette", 'red', attrs=['bold']), file=out)
 
         for sig in f.findall("./FahrstrVSignal"):
             rp = get_refpunkt(get_modul_aus_dateiknoten(sig), int(sig.attrib.get("Ref", 0)))
@@ -681,34 +690,14 @@ if args.modus == 'fahrstrassen':
         if args.bue:
             for rp, values in bue.items():
                 signal = rp.signal()
+                hat_zaehler = int(signal.attrib.get("SignalFlags", 0)) & 8 != 0
 
                 print(" - Bahnuebergang{} {} {} an {}".format(
-                    ("+" if int(signal.attrib.get("SignalFlags", 0)) & 8 != 0 else ""),
+                    ("+" if hat_zaehler else ""),
                     colored(signal.attrib.get("NameBetriebsstelle", "?"), 'green'),
                     colored(signal.attrib.get("Signalname", "?"), 'green', attrs=['bold']),
                     rp,
                 ), file=out)
-
-                ksig = signal.find("./KoppelSignal")
-                indent = 2
-                while ksig is not None:
-                    rp = get_refpunkt(get_modul_aus_dateiknoten(ksig, rp.modul), int(ksig.attrib.get("ReferenzNr", 0)))
-                    if not rp.valid():
-                        print("{} - ".format(" " * indent) + colored("Koppelsignal mit nicht aufloesbarer Referenz {} in Modul {}".format(rp.refnr, rp.modul), 'white', 'on_red'), file=out)
-                        break
-                    koppelsignal = rp.signal()
-                    if koppelsignal is None:
-                        print("{} - ".format(" " * indent) + colored("Koppelsignal-Referenz mit fehlendem Signal an {} (Referenznummer {})".format(rp, rp.refnr), 'white', 'on_red'), file=out)
-                        break
-                    print("{} - Koppelsignal{} {} {} an {}".format(
-                        " " * indent,
-                        ("+" if int(koppelsignal.attrib.get("SignalFlags", 0)) & 8 != 0 else ""),
-                        colored(koppelsignal.attrib.get("NameBetriebsstelle", "?"), 'green'),
-                        colored(koppelsignal.attrib.get("Signalname", "?"), 'green', attrs=['bold']),
-                        rp,
-                    ), file=out)
-                    indent += 2
-                    ksig = koppelsignal.find("./KoppelSignal")
 
                 hat_schliessen = False
                 for modul, el, ri, schliessen in values:
@@ -725,6 +714,31 @@ if args.modus == 'fahrstrassen':
                         print("   - " + colored("Bue oeffnen", 'green') + " an {}".format(str_el_ri(modul, el, ri)), file=out)
                 if not hat_oeffnen:
                     print("   - " + colored("!!! Kein Oeffnen-Ereignis in der Fahrstrasse", 'red', attrs=['bold']), file=out)
+
+                ksig = signal.find("./KoppelSignal")
+                indent = 2
+                while ksig is not None:
+                    rp = get_refpunkt(get_modul_aus_dateiknoten(ksig, rp.modul), int(ksig.attrib.get("ReferenzNr", 0)))
+                    if not rp.valid():
+                        print("{} - ".format(" " * indent) + colored("Koppelsignal mit nicht aufloesbarer Referenz {} in Modul {}".format(rp.refnr, rp.modul), 'white', 'on_red'), file=out)
+                        break
+                    koppelsignal = rp.signal()
+                    if koppelsignal is None:
+                        print("{} - ".format(" " * indent) + colored("Koppelsignal-Referenz mit fehlendem Signal an {} (Referenznummer {})".format(rp, rp.refnr), 'white', 'on_red'), file=out)
+                        break
+                    hat_zaehler = hat_zaehler or int(koppelsignal.attrib.get("SignalFlags", 0)) & 8 != 0
+                    print("{} - Koppelsignal{} {} {} an {}".format(
+                        " " * indent,
+                        ("+" if int(koppelsignal.attrib.get("SignalFlags", 0)) & 8 != 0 else ""),
+                        colored(koppelsignal.attrib.get("NameBetriebsstelle", "?"), 'green'),
+                        colored(koppelsignal.attrib.get("Signalname", "?"), 'green', attrs=['bold']),
+                        rp,
+                    ), file=out)
+                    indent += 2
+                    ksig = koppelsignal.find("./KoppelSignal")
+
+                if not hat_zaehler:
+                    print("   - " + colored("!!! Kein Signal mit Bue-Zaehler in der Koppelungskette", 'red', attrs=['bold']), file=out)
 
         if args.register:
             reg_strs = []
