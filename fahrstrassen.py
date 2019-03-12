@@ -81,7 +81,7 @@ def str_el_ri(modul, element, richtung):
     global dieses_modul
     return "Element {}{}{}".format(
         element.attrib.get("Nr", "0"),
-        'n' if richtung == "Norm" else 'g',
+        'n' if richtung == NORM else 'g',
         "" if modul == dieses_modul else "[{}]".format(os.path.basename(modul.replace('\\', os.sep))),
     )
 
