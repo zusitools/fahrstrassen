@@ -320,16 +320,39 @@ def get_signalbild_fuer_spalte(signal, spalte):
 
 def get_signalbild_fuer_zeile(signal, zeile, ersatzsignal):
     if ersatzsignal:
-        return "?"
+        try:
+            ersatzsignal_knoten = signal.findall("./Ersatzsignal")[zeile]
+        except IndexError:
+            return '?'
+        name = ersatzsignal_knoten.attrib.get("ErsatzsigBezeichnung", "?") + ": "
+        eintrag_vsig_geschw_0 = ersatzsignal_knoten.find("./MatrixEintrag")
+        signalbild_id = int(eintrag_vsig_geschw_0.attrib.get("Signalbild", 0))
 
-    signalbild_id = all_ones
-    anz_spalten = len(signal.findall("./VsigBegriff"))
-    matrix = signal.findall("./MatrixEintrag")
+    else:
+        signalbild_id = all_ones
+        anz_spalten = len(signal.findall("./VsigBegriff"))
+        matrix = signal.findall("./MatrixEintrag")
 
-    for i in range(0, anz_spalten):
-        signalbild_id &= int(matrix[zeile * anz_spalten + i].attrib.get("Signalbild", 0))
+        for i in range(0, anz_spalten):
+            signalbild_id &= int(matrix[zeile * anz_spalten + i].attrib.get("Signalbild", 0))
 
-    return get_signalbild_fuer_id(signal, signalbild_id)
+        # Finde Eintrag mit Vorsignalgeschwindigkeit 0
+        # (dieser wird beim Stellen der Fahrstrasse auf jeden Fall angesteuert)
+        spalte_geschw_0 = 0
+        for idx, vsig_begriff in enumerate(signal.findall("VsigBegriff")):
+            if vsig_begriff.attrib.get("VsigGeschw", 0) == 0:
+                spalte_geschw_0 = idx
+                break
+
+        eintrag_vsig_geschw_0 = matrix[zeile * anz_spalten + spalte_geschw_0]
+        name = ""
+
+    befehl_einblenden = ""
+    for e in eintrag_vsig_geschw_0.findall("./Ereignis"):
+        if int(e.attrib.get("Er", 0)) == 32:
+            befehl_einblenden += ' + Befehl einblenden ({} m)'.format(e.attrib.get("Wert", 0))
+
+    return name + get_signalbild_fuer_id(signal, signalbild_id) + befehl_einblenden
 
 def get_signalbild_id_fuer_zeile_und_spalte(signal, zeile, spalte, ersatzsignal):
     if ersatzsignal:
