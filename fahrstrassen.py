@@ -6,6 +6,7 @@ import os
 import io
 import argparse
 from collections import defaultdict
+from functools import lru_cache
 
 try:
     from termcolor import colored
@@ -139,13 +140,42 @@ def geschw_kleiner(v1, v2):
 def normalize_zusi_relpath(relpath):
     return relpath.upper().replace('/', '\\')
 
+@lru_cache(maxsize=None)
+def get_zusi_datapath():
+    return os.environ.get("ZUSI3_DATAPATH", "")
+
+@lru_cache(maxsize=None)
+def get_zusi_datapath_official():
+    try:
+        return os.environ['ZUSI3_DATAPATH_OFFICIAL']
+    except KeyError:
+        return get_zusi_datapath()
+
 def get_zusi_relpath(realpath):
-    if not os.path.isabs(realpath):
-        realpath = os.path.abspath(realpath)
-    return normalize_zusi_relpath(os.path.relpath(realpath, os.environ['ZUSI3_DATAPATH']))
+    try:
+        candidate1 = os.path.relpath(realpath, get_zusi_datapath())
+    except ValueError:
+        candidate1 = None
+
+    try:
+        candidate2 = os.path.relpath(realpath, get_zusi_datapath_official())
+    except ValueError:
+        candidate2 = None
+
+    if candidate1 is None:
+        if candidate2 is None:
+            raise Exception("Kann {} nicht in Zusi-relativen Pfad umwandeln (Datenverzeichnis: {}, Datenverzeichnis offiziell: {})".format(realpath, get_zusi_datapath(), get_zusi_datapath_official()))
+        else:
+            return candidate2.replace('/', '\\')
+    else:
+        return candidate1.replace('/', '\\')
 
 def get_abspath(zusi_relpath):
-    return path_insensitive(os.path.join(os.environ['ZUSI3_DATAPATH'], zusi_relpath.lstrip('\\').strip().replace('\\', os.sep)))
+    zusi_relpath = zusi_relpath.lstrip('\\').strip().replace('\\', os.sep)
+    result = path_insensitive(os.path.join(get_zusi_datapath(), zusi_relpath))
+    if os.path.exists(result):
+        return result
+    return path_insensitive(os.path.join(get_zusi_datapath_official(), zusi_relpath))
 
 # {fehlendes Modul}
 missing = set()
@@ -389,7 +419,7 @@ parser.add_argument('--signal', action='store', help="Signalbezeichnung (z.B. \"
 
 args = parser.parse_args()
 
-dieses_modul = get_zusi_relpath(args.dateiname)
+dieses_modul = get_zusi_relpath(os.path.realpath(args.dateiname))
 logging.debug("Dieses Modul: {} -> {}".format(args.dateiname, dieses_modul))
 
 lade_modul(dieses_modul)
